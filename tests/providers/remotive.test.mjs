@@ -122,14 +122,43 @@ try {
     fail(`remotive.fetch() description = ${JSON.stringify(first?.description)}`);
   }
 
-  const expectedPostedAt = Date.parse('2026-08-05T09:45:42');
+  const expectedPostedAt = Date.UTC(2026, 7, 5, 9, 45, 42);
 
   if (first?.postedAt === expectedPostedAt) {
     pass('remotive.fetch() converts publication_date to epoch milliseconds');
   } else {
     fail(`remotive.fetch() postedAt = ${JSON.stringify(first?.postedAt)}`);
   }
+const explicitTimezone = await remotive.fetch(
+  { name: 'Remotive Board', provider: 'remotive' },
+  {
+    fetchJson: async () => ({
+      jobs: [
+        {
+          id: 24680,
+          title: 'Timezone Role',
+          url: 'https://remotive.com/remote-jobs/timezone-role',
+          company_name: 'TZ Corp',
+          publication_date: '2026-08-05T09:45:42+02:00',
+        },
+      ],
+    }),
+  },
+);
 
+const explicitTimezoneExpected = Date.parse(
+  '2026-08-05T09:45:42+02:00',
+);
+
+if (explicitTimezone[0]?.postedAt === explicitTimezoneExpected) {
+  pass('remotive.fetch() preserves explicit publication_date timezone offsets');
+} else {
+  fail(
+    `remotive.fetch() explicit timezone postedAt = ${JSON.stringify(
+      explicitTimezone[0]?.postedAt,
+    )}`,
+  );
+}
   if (
     Array.isArray(first?.tags) &&
     first.tags.length === 2 &&

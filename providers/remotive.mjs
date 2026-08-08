@@ -43,7 +43,21 @@ function htmlToText(html) {
 function toEpochMs(value) {
   if (typeof value !== 'string' || !value.trim()) return undefined;
 
-  const timestamp = Date.parse(value);
+  const raw = value.trim();
+
+  // Remotive currently returns publication_date without an explicit timezone.
+  // Treat timezone-less ISO datetimes as UTC so parsing is deterministic
+  // across machines, while preserving timestamps that already include
+  // an explicit Z or numeric UTC offset.
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+
+  const normalized =
+    raw.includes('T') && !hasExplicitTimezone
+      ? `${raw}Z`
+      : raw;
+
+  const timestamp = Date.parse(normalized);
+
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
