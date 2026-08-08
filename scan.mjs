@@ -1590,6 +1590,34 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const verify = args.includes('--verify');
+  // Optional structured JSON output for external consumers.
+// Supports:
+//   --json-out data/scan-output.json
+//   --json-out=data/scan-output.json
+const jsonOutFlag = args.indexOf('--json-out');
+const jsonOutInline = args.find(a => a.startsWith('--json-out='));
+
+let jsonOutPath = null;
+
+if (jsonOutFlag !== -1) {
+  const candidate = args[jsonOutFlag + 1];
+
+  if (!candidate || candidate.startsWith('--')) {
+    console.error('Error: --json-out expects a file path');
+    process.exit(1);
+  }
+
+  jsonOutPath = candidate;
+} else if (jsonOutInline) {
+  const candidate = jsonOutInline.slice('--json-out='.length).trim();
+
+  if (!candidate) {
+    console.error('Error: --json-out expects a file path');
+    process.exit(1);
+  }
+
+  jsonOutPath = candidate;
+}
   // Opt-in: on an anti-bot challenge (e.g. pracuj.pl Cloudflare wall), retry the
   // URL in a headed browser. Off by default — headed Chromium needs a display, so
   // scheduled/unattended scans should not rely on it.
@@ -1933,6 +1961,55 @@ async function main() {
     appendToPipeline(verifiedOffers);
     appendToScanHistory(verifiedOffers, date);
   }
+  // Optional machine-readable output for downstream consumers.
+// Uses the same post-filter/post-dedup offers accepted by this scan.
+if (!dryRun && jsonOutPath) {
+  const outputPath = path.resolve(jsonOutPath);
+
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  const payload = {
+    schemaVersion: 1,
+    date,
+    generatedAt: new Date().toISOString(),
+    offersCount: verifiedOffers.length,
+
+    offers: verifiedOffers.map(offer => ({
+      source: offer.source || null,
+      sourceJobId: offer.sourceJobId || null,
+
+      title: offer.title,
+      url: offer.url,
+      company: offer.company,
+      location: offer.location || '',
+      description: offer.description || '',
+      postedAt: offer.postedAt ?? null,
+
+      salary: offer.salary ?? null,
+      employmentTypeRaw: offer.employmentTypeRaw || '',
+      salaryRaw: offer.salaryRaw || '',
+      tags: Array.isArray(offer.tags) ? offer.tags : [],
+      category: offer.category || '',
+
+      trustScore: offer.trustScore ?? null,
+      trustFlags: Array.isArray(offer.trustFlags) ? offer.trustFlags : [],
+      trustLevel: offer.trustLevel || null,
+
+      blacklisted: Boolean(offer.blacklisted),
+      note: offer.note || null,
+
+      rawPayload: offer.rawPayload ?? null,
+    })),
+  };
+
+  writeFileSync(
+    outputPath,
+    JSON.stringify(payload, null, 2) + '\n',
+    'utf-8',
+  );
+
+  console.log(`Structured JSON saved to ${outputPath}`);
+}
   if (!dryRun && cooldownOffers.length > 0) {
     const cooldownGroups = {};
     for (const item of cooldownOffers) {
