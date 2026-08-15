@@ -29,11 +29,17 @@ try {
     { last_updated: 1751500000, legal: 'API terms...' },                 // metadata row — must be dropped
     {
       slug: 'acme-staff-ai-engineer',
+      id: '12345',
+      epoch: 1782864000,
+      date: '2026-07-01T00:00:00+00:00',
       position: 'Staff AI Engineer',
       company: 'Acme Corp',
       location: 'Worldwide',
       url: 'https://remoteok.com/remote-jobs/acme-staff-ai-engineer',
-      date: '2026-07-01T00:00:00+00:00',
+      description: '<p>Build <strong>AI systems</strong>.</p><ul><li>Python</li><li>SQL</li></ul>',
+      tags: ['analyst', ' full time ', '', 123],
+      salary_min: 40000,
+      salary_max: 180000,
     },
     {
       position: '  Platform Engineer  ',                                 // whitespace → trimmed
@@ -67,10 +73,13 @@ try {
     pass('remoteok.fetch() keeps 2 valid jobs (drops metadata row, null, non-object, empty-position, bad-url rows)');
   else fail(`remoteok.fetch() returned ${fetched.length} jobs (expected 2): ${JSON.stringify(fetched)}`);
 
-  // Normalized shape: exactly { title, url, company, location }.
-  if (fetched[0] && Object.keys(fetched[0]).sort().join(',') === 'company,location,title,url')
-    pass('remoteok.fetch() returns the normalized { title, url, company, location } shape');
-  else fail(`remoteok.fetch() row 0 keys = ${JSON.stringify(fetched[0] && Object.keys(fetched[0]))}`);
+  if (fetched[0]
+    && typeof fetched[0].title === 'string'
+    && typeof fetched[0].url === 'string'
+    && typeof fetched[0].company === 'string'
+    && typeof fetched[0].location === 'string')
+  pass('remoteok.fetch() preserves the core normalized fields');
+else fail(`remoteok.fetch() row 0 core fields = ${JSON.stringify(fetched[0])}`);
 
   if (fetched[0]?.title === 'Staff AI Engineer'
       && fetched[0]?.url === 'https://remoteok.com/remote-jobs/acme-staff-ai-engineer'
@@ -78,6 +87,32 @@ try {
       && fetched[0]?.location === 'Worldwide')
     pass('remoteok.fetch() maps position/url/company/location for a full row');
   else fail(`remoteok.fetch() row 0 = ${JSON.stringify(fetched[0])}`);
+
+  if (fetched[0]?.sourceJobId === '12345'
+      && fetched[0]?.postedAt === 1782864000000
+      && fetched[0]?.employmentTypeRaw === 'full_time')
+    pass('remoteok.fetch() preserves id, publication time, and employment type');
+  else fail(`remoteok.fetch() metadata = ${JSON.stringify(fetched[0])}`);
+
+  if (typeof fetched[0]?.description === 'string'
+      && fetched[0].description.includes('Build AI systems')
+      && fetched[0].description.includes('Python')
+      && fetched[0].description.includes('SQL')
+      && !fetched[0].description.includes('<p>')
+      && !fetched[0].description.includes('<li>'))
+    pass('remoteok.fetch() converts HTML description to plain text');
+  else fail(`remoteok.fetch() description = ${JSON.stringify(fetched[0]?.description)}`);
+
+  if (Array.isArray(fetched[0]?.tags)
+      && fetched[0].tags.length === 2
+      && fetched[0].tags[0] === 'analyst'
+      && fetched[0].tags[1] === 'full time')
+    pass('remoteok.fetch() normalizes string tags');
+  else fail(`remoteok.fetch() tags = ${JSON.stringify(fetched[0]?.tags)}`);
+
+  if (fetched[0]?.rawPayload === sample[1])
+    pass('remoteok.fetch() preserves the original raw payload');
+  else fail('remoteok.fetch() does not preserve rawPayload');
 
   if (fetched[1]?.title === 'Platform Engineer'
       && fetched[1]?.url === 'https://remoteok.com/remote-jobs/beta-platform-engineer')
