@@ -1987,6 +1987,7 @@ if (!dryRun && jsonOutPath) {
 
       salary: offer.salary ?? null,
       employmentTypeRaw: offer.employmentTypeRaw || '',
+      workingTimeRaw: offer.workingTimeRaw || '',
       salaryRaw: offer.salaryRaw || '',
       tags: Array.isArray(offer.tags) ? offer.tags : [],
       category: offer.category || '',

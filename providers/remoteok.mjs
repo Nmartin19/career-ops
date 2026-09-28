@@ -53,14 +53,22 @@ function normalizeTags(tags) {
  * @param {string[]} tags
  * @returns {string}
  */
-
 function employmentTypeFromTags(tags) {
-  if (tags.includes('full time')) return 'full_time';
-  if (tags.includes('part time')) return 'part_time';
   if (tags.includes('internship') || tags.includes('intern')) return 'internship';
-  if (tags.includes('contract')) return 'contract';
+  if (tags.includes('contract')) return 'contractor';
   if (tags.includes('freelance')) return 'freelance';
   if (tags.includes('temporary')) return 'temporary';
+
+  return '';
+}
+
+/**
+ * @param {string[]} tags
+ * @returns {string}
+ */
+function workingTimeFromTags(tags) {
+  if (tags.includes('full time')) return 'full_time';
+  if (tags.includes('part time')) return 'part_time';
 
   return '';
 }
@@ -118,6 +126,7 @@ export default {
           description: htmlToText(j.description),
           postedAt: toEpochMs(j.epoch, j.date),
           employmentTypeRaw: employmentTypeFromTags(tags),
+          workingTimeRaw: workingTimeFromTags(tags),
           tags,
           rawPayload: j,
         };

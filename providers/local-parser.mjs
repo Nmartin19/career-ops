@@ -147,11 +147,18 @@ function normalizeParserJob(job, entry) {
   );
   if (!title || !url) return null;
 
-  return {
+    return {
     title,
     url,
     company: String(job.company || entry.name || '').trim(),
     location: normalizeLocation(job.location || job.locations),
+    employmentTypeRaw: typeof job.employmentTypeRaw === 'string'
+      ? job.employmentTypeRaw.trim()
+      : '',
+    workingTimeRaw: typeof job.workingTimeRaw === 'string'
+      ? job.workingTimeRaw.trim()
+      : '',
+    rawPayload: job.rawPayload ?? null,
   };
 }
 

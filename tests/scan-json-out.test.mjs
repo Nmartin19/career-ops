@@ -144,6 +144,20 @@ tracked_companies:
         } else {
           fail('exported offer is missing required core structured fields');
         }
+
+        if (
+          offer?.employmentTypeRaw === ''
+          && offer?.workingTimeRaw === 'full_time'
+          && offer?.rawPayload?.fixtureJobType === 'full_time'
+        ) {
+          pass('JSON output preserves employment, working-time, and raw metadata');
+        } else {
+          fail(`JSON output metadata = ${JSON.stringify({
+            employmentTypeRaw: offer?.employmentTypeRaw,
+            workingTimeRaw: offer?.workingTimeRaw,
+            rawPayload: offer?.rawPayload,
+          })}`);
+        }
       }
     }
   } catch (err) {

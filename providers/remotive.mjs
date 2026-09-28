@@ -90,37 +90,61 @@ export default {
       .filter(j => j && typeof j === 'object'
         && typeof j.title === 'string' && j.title.trim() !== ''
         && typeof j.url === 'string' && /^https?:\/\//i.test(j.url.trim()))
-      .map(j => ({
-        // Career-Ops normalized contract
-        title: j.title.trim(),
-        url: j.url.trim(),
-        company: typeof j.company_name === 'string' && j.company_name.trim()
-          ? j.company_name.trim()
-          : (entry.name || 'Remotive'),
-        location: typeof j.candidate_required_location === 'string'
-          ? j.candidate_required_location.trim()
-          : '',
-        description: htmlToText(j.description),
-        postedAt: toEpochMs(j.publication_date),
+            .map(j => {
+        const jobType = typeof j.job_type === 'string'
+          ? j.job_type.trim().toLowerCase().replace(/[-\s]+/g, '_')
+          : '';
 
-        // Remotive-specific metadata preserved for downstream normalization
-        sourceJobId: j.id != null ? String(j.id) : '',
-        employmentTypeRaw: typeof j.job_type === 'string'
-          ? j.job_type.trim()
-          : '',
-        salaryRaw: typeof j.salary === 'string'
-          ? j.salary.trim()
-          : '',
-        tags: Array.isArray(j.tags)
-          ? j.tags
-              .filter((/** @type {unknown} */ tag) => typeof tag === 'string')
-              .map((/** @type {string} */ tag) => tag.trim())
-              .filter(Boolean)
-          : [],
-        category: typeof j.category === 'string'
-          ? j.category.trim()
-          : '',
-        rawPayload: j,
-      }));
+        let employmentTypeRaw = '';
+        let workingTimeRaw = '';
+
+        if (jobType === 'full_time' || jobType === 'fulltime') {
+          workingTimeRaw = 'full_time';
+        } else if (jobType === 'part_time' || jobType === 'parttime') {
+          workingTimeRaw = 'part_time';
+        } else if (jobType === 'contract') {
+          employmentTypeRaw = 'contractor';
+        } else if (jobType === 'temporary') {
+          employmentTypeRaw = 'temporary';
+        } else if (jobType === 'internship') {
+          employmentTypeRaw = 'internship';
+        } else if (jobType === 'freelance') {
+          employmentTypeRaw = 'freelance';
+        } else if (jobType === 'permanent') {
+          employmentTypeRaw = 'permanent';
+        }
+
+        return {
+          // Career-Ops normalized contract
+          title: j.title.trim(),
+          url: j.url.trim(),
+          company: typeof j.company_name === 'string' && j.company_name.trim()
+            ? j.company_name.trim()
+            : (entry.name || 'Remotive'),
+          location: typeof j.candidate_required_location === 'string'
+            ? j.candidate_required_location.trim()
+            : '',
+          description: htmlToText(j.description),
+          postedAt: toEpochMs(j.publication_date),
+
+          // Remotive-specific metadata preserved for downstream normalization
+          sourceJobId: j.id != null ? String(j.id) : '',
+          employmentTypeRaw,
+          workingTimeRaw,
+          salaryRaw: typeof j.salary === 'string'
+            ? j.salary.trim()
+            : '',
+          tags: Array.isArray(j.tags)
+            ? j.tags
+                .filter((/** @type {unknown} */ tag) => typeof tag === 'string')
+                .map((/** @type {string} */ tag) => tag.trim())
+                .filter(Boolean)
+            : [],
+          category: typeof j.category === 'string'
+            ? j.category.trim()
+            : '',
+          rawPayload: j,
+        };
+      });
   },
 };

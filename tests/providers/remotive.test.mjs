@@ -98,9 +98,10 @@ try {
     fail(`remotive.fetch() core fields = ${JSON.stringify(first)}`);
   }
 
-  if (
+    if (
     first?.sourceJobId === '12345' &&
-    first?.employmentTypeRaw === 'full_time' &&
+    first?.employmentTypeRaw === '' &&
+    first?.workingTimeRaw === 'full_time' &&
     first?.salaryRaw === '$100k - $130k' &&
     first?.category === 'Software Development'
   ) {
@@ -209,6 +210,7 @@ if (explicitTimezone[0]?.postedAt === explicitTimezoneExpected) {
     second?.postedAt === undefined &&
     second?.sourceJobId === '67890' &&
     second?.employmentTypeRaw === '' &&
+    second?.workingTimeRaw === '' &&
     second?.salaryRaw === '' &&
     Array.isArray(second?.tags) &&
     second.tags.length === 0 &&

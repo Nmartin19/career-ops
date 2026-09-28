@@ -1,22 +1,22 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { decodeEntities } from './_html-entities.mjs';
 
 // Arbeitnow provider — board-wide aggregator feed (EU/DACH-heavy, but
 // international): https://www.arbeitnow.com/api/job-board-api
 // Response shape: { data: [ { slug, company_name, title, description, remote,
 //   url, tags, job_types, location, created_at } ], links, meta }
 //
-// Jobs are ordered newest-first, 100 per page. The API echoes a rotating
-// featured `?search=` term into links.next, so page URLs are built directly as
-// `?page=N` (never by following links.next) to keep the FULL board in view —
-// scan.mjs's title_filter then gates on the configured titles. Pages are fetched
-// until one comes back short/empty or the page cap is reached (default 3,
-// override with `max_pages` on the portal entry).
+// Jobs are ordered newest-first. Page sizes may vary; page URLs are built
+// directly as `?page=N` rather than following links.next, keeping pagination
+// deterministic and avoiding query parameters that could narrow the board.
+// Pages are fetched until one comes back short/empty or the page cap is reached
+// (default 3, override with `max_pages` on the portal entry).
 //
 // Wire in via a `job_boards:` entry with `provider: arbeitnow`.
 
 const FEED_BASE = 'https://www.arbeitnow.com/api/job-board-api';
-const TRUSTED_HOST = 'www.arbeitnow.com';
+const TRUSTED_HOSTS = new Set(['www.arbeitnow.com', 'www.arbeitnow.co.uk']);
 const PER_PAGE = 100;
 const DEFAULT_MAX_PAGES = 3;
 const MAX_PAGES_CAP = 50;
@@ -30,36 +30,94 @@ function assertArbeitnowUrl(url) {
     throw new Error(`arbeitnow: invalid URL: ${url}`);
   }
   if (parsed.protocol !== 'https:') throw new Error(`arbeitnow: URL must use HTTPS: ${url}`);
-  if (parsed.hostname !== TRUSTED_HOST) {
-    throw new Error(`arbeitnow: untrusted hostname "${parsed.hostname}" — must be ${TRUSTED_HOST}`);
+  if (!TRUSTED_HOSTS.has(parsed.hostname)) {
+    throw new Error(`arbeitnow: untrusted hostname "${parsed.hostname}" — allowed: ${[...TRUSTED_HOSTS].join(', ')}`);
   }
   return url;
 }
 
 /** Resolve the page cap: a positive integer `max_pages` on the entry, capped. */
+/** @param {{ max_pages?: number } | undefined} entry */
 function resolveMaxPages(entry) {
   const v = entry?.max_pages;
-  if (Number.isInteger(v) && v > 0) return Math.min(v, MAX_PAGES_CAP);
+  if (typeof v === 'number' && Number.isInteger(v) && v > 0) return Math.min(v, MAX_PAGES_CAP);
   return DEFAULT_MAX_PAGES;
 }
 
 /**
- * Normalize a single Arbeitnow job. Exported for unit tests.
- *
- * Field mapping → the normalized Job shape:
- *   - title:    `title`, trimmed (items without one are dropped).
- *   - url:      `url` — an absolute `https:` posting URL host-locked to
- *               www.arbeitnow.com (an off-host or non-https URL is untrusted and
- *               drops the item). It is the dedup key and is display-only (written
- *               to the pipeline/history, never server-fetched here).
- *   - company:  `company_name`, falling back to the portal entry name, then
- *               "Arbeitnow".
- *   - location: `location`, with "Remote" appended when `remote` is true.
- *   - postedAt: `created_at` (epoch SECONDS) → epoch ms (omitted when absent).
- *
+ * @param {unknown} html
+ * @returns {string}
+ */
+function htmlToText(html) {
+  if (typeof html !== 'string' || !html) return '';
+
+  const decoded = decodeEntities(html);
+  const cleaned = decoded
+    .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ');
+
+  return decodeEntities(cleaned)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * @param {unknown} tags
+ * @returns {string[]}
+ */
+function normalizeTags(tags) {
+  if (!Array.isArray(tags)) return [];
+
+  return tags
+    .filter((/** @type {unknown} */ tag) => typeof tag === 'string')
+    .map((/** @type {string} */ tag) => tag.trim())
+    .filter(Boolean);
+}
+
+/**
+ * @param {unknown} jobTypes
+ * @returns {string}
+ */
+function employmentTypeFromJobTypes(jobTypes) {
+  const types = normalizeTags(jobTypes)
+    .map(type => type.toLowerCase());
+
+  if (types.some(type => type === 'intern' || type.includes('internship'))) return 'internship';
+  if (types.some(type => type.includes('freelance'))) return 'freelance';
+  if (types.some(type => type.includes('temporary'))) return 'temporary';
+  if (types.some(type => type.includes('permanent'))) return 'permanent';
+  if (types.some(type => type.includes('contract'))) return 'contractor';
+
+  return '';
+}
+
+/**
+ * @param {unknown} jobTypes
+ * @returns {string}
+ */
+function workingTimeFromJobTypes(jobTypes) {
+  const types = normalizeTags(jobTypes)
+    .map(type => type.toLowerCase());
+
+  const explicitTypes = types
+    .filter(type => !type.includes('full or part time'));
+
+  if (explicitTypes.some(type => /\bpart[- ]?time\b|\bparttime\b/.test(type))) return 'part_time';
+  if (explicitTypes.some(type => /\bfull[- ]?time\b|\bfulltime\b/.test(type))) return 'full_time';
+
+  return '';
+}
+
+/**
  * @param {any} j
  * @param {string} [fallbackCompany]
- * @returns {{ title: string, url: string, company: string, location: string, postedAt?: number } | null}
  */
 export function normalizeArbeitnowJob(j, fallbackCompany) {
   if (!j || typeof j !== 'object') return null;
@@ -67,14 +125,14 @@ export function normalizeArbeitnowJob(j, fallbackCompany) {
   const title = typeof j.title === 'string' ? j.title.trim() : '';
   if (!title) return null;
 
-  // url must be an absolute https posting link on www.arbeitnow.com — Arbeitnow
-  // always serves postings there, so an off-host URL is untrusted and dropped.
+  // URL must be an absolute HTTPS posting link on a trusted Arbeitnow host.
+  // Any other host is untrusted and the item is dropped.
   let url = '';
   const rawUrl = typeof j.url === 'string' ? j.url.trim() : '';
   if (rawUrl) {
     try {
       const parsed = new URL(rawUrl);
-      if (parsed.protocol === 'https:' && parsed.hostname === TRUSTED_HOST) url = parsed.href;
+      if (parsed.protocol === 'https:' && TRUSTED_HOSTS.has(parsed.hostname)) url = parsed.href;
     } catch {
       // malformed URL → leave url = '' → dropped below
     }
@@ -89,9 +147,35 @@ export function normalizeArbeitnowJob(j, fallbackCompany) {
   const baseLocation = typeof j.location === 'string' ? j.location.trim() : '';
   const location = [baseLocation, j.remote === true ? 'Remote' : ''].filter(Boolean).join(', ');
 
-  /** @type {{ title: string, url: string, company: string, location: string, postedAt?: number }} */
-  const job = { title, url, company, location };
-  if (Number.isFinite(j.created_at)) job.postedAt = j.created_at * 1000; // epoch seconds → ms
+  const tags = normalizeTags(j.tags);
+
+  /** @type {{
+   * title: string,
+   * url: string,
+   * company: string,
+   * location: string,
+   * sourceJobId: string,
+   * description: string,
+   * employmentTypeRaw: string,
+   * workingTimeRaw: string,
+   * tags: string[],
+   * rawPayload: any,
+   * postedAt?: number
+   * }} */
+  const job = {
+    title,
+    url,
+    company,
+    location,
+    sourceJobId: typeof j.slug === 'string' ? j.slug.trim() : '',
+    description: htmlToText(j.description),
+    employmentTypeRaw: employmentTypeFromJobTypes(j.job_types),
+    workingTimeRaw: workingTimeFromJobTypes(j.job_types),
+    tags,
+    rawPayload: j,
+  };
+
+  if (Number.isFinite(j.created_at)) job.postedAt = j.created_at * 1000;
   return job;
 }
 
@@ -110,7 +194,7 @@ export default {
       // featured `?search=` term that would narrow the board).
       const url = `${FEED_BASE}?page=${page}`;
       // redirect:'error' prevents SSRF via server-side redirects
-      const json = await ctx.fetchJson(url, { redirect: 'error' });
+      const json = /** @type {any} */ (await ctx.fetchJson(url, { redirect: 'error' }));
       if (!json || !Array.isArray(json.data)) {
         throw new Error(
           `arbeitnow: unexpected API response on page ${page} — expected { data: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`,

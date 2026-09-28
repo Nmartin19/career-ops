@@ -46,6 +46,7 @@ try {
       company: '   ',                                                    // whitespace-only → falls back to entry.name
       location: null,                                                    // non-string → ''
       url: '  https://remoteok.com/remote-jobs/beta-platform-engineer  ',
+      tags: ['contract'],
     },
     null,                                                                // null row — must be skipped
     'not-an-object',                                                     // non-object row — must be skipped
@@ -88,10 +89,11 @@ else fail(`remoteok.fetch() row 0 core fields = ${JSON.stringify(fetched[0])}`);
     pass('remoteok.fetch() maps position/url/company/location for a full row');
   else fail(`remoteok.fetch() row 0 = ${JSON.stringify(fetched[0])}`);
 
-  if (fetched[0]?.sourceJobId === '12345'
+    if (fetched[0]?.sourceJobId === '12345'
       && fetched[0]?.postedAt === 1782864000000
-      && fetched[0]?.employmentTypeRaw === 'full_time')
-    pass('remoteok.fetch() preserves id, publication time, and employment type');
+      && fetched[0]?.employmentTypeRaw === ''
+      && fetched[0]?.workingTimeRaw === 'full_time')
+    pass('remoteok.fetch() preserves id, publication time, and separates working time');
   else fail(`remoteok.fetch() metadata = ${JSON.stringify(fetched[0])}`);
 
   if (typeof fetched[0]?.description === 'string'
@@ -126,6 +128,14 @@ else fail(`remoteok.fetch() row 0 core fields = ${JSON.stringify(fetched[0])}`);
   if (fetched[1]?.location === '')
     pass('remoteok.fetch() yields empty location for a non-string location value');
   else fail(`remoteok.fetch() row 1 location = ${JSON.stringify(fetched[1]?.location)}`);
+
+  if (fetched[1]?.employmentTypeRaw === 'contractor'
+      && fetched[1]?.workingTimeRaw === '')
+    pass('remoteok.fetch() maps contract to contractor without inventing working time');
+  else fail(`remoteok.fetch() row 1 employment metadata = ${JSON.stringify({
+    employmentTypeRaw: fetched[1]?.employmentTypeRaw,
+    workingTimeRaw: fetched[1]?.workingTimeRaw,
+  })}`);
 
   // company default when both the row's company and entry.name are missing → 'RemoteOK'.
   const noName = await remoteok.fetch(

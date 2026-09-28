@@ -14,16 +14,129 @@ try {
   else fail(`arbeitnow.id is ${JSON.stringify(arbeitnow.id)}`);
 
   // normalizeArbeitnowJob — field mapping.
-  const full = normalizeArbeitnowJob(
-    { title: '  Staff AI Engineer  ', url: '  https://www.arbeitnow.com/jobs/x1  ', company_name: '  Acme Co  ', location: '  Berlin  ', remote: false, created_at: 1782693032 },
-    'Fallback',
-  );
-  if (full && full.title === 'Staff AI Engineer' && full.url === 'https://www.arbeitnow.com/jobs/x1'
-      && full.company === 'Acme Co' && full.location === 'Berlin' && full.postedAt === 1782693032000) {
+  const fullPayload = {
+    slug: 'staff-ai-engineer-12345',
+    title: '  Staff AI Engineer  ',
+    url: '  https://www.arbeitnow.com/jobs/x1  ',
+    company_name: '  Acme Co  ',
+    location: '  Berlin  ',
+    remote: false,
+    created_at: 1782693032,
+    description: '&lt;p&gt;Build &lt;strong&gt;AI systems&lt;/strong&gt;.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Python&lt;/li&gt;&lt;li&gt;SQL&lt;/li&gt;&lt;/ul&gt;',
+    tags: ['data', ' python ', '', 123],
+    job_types: ['Full Time', 'Experienced'],
+  };
+
+  const full = normalizeArbeitnowJob(fullPayload, 'Fallback');
+
+  if (full && full.title === 'Staff AI Engineer'
+      && full.url === 'https://www.arbeitnow.com/jobs/x1'
+      && full.company === 'Acme Co'
+      && full.location === 'Berlin'
+      && full.postedAt === 1782693032000) {
     pass('normalizeArbeitnowJob maps + trims title/url/company/location and converts created_at seconds → ms');
   } else {
     fail(`normalizeArbeitnowJob full row = ${JSON.stringify(full)}`);
   }
+
+    if (full?.sourceJobId === 'staff-ai-engineer-12345'
+      && full?.employmentTypeRaw === ''
+      && full?.workingTimeRaw === 'full_time') {
+    pass('normalizeArbeitnowJob preserves source id and separates working time');
+  } else {
+    fail(`normalizeArbeitnowJob metadata = ${JSON.stringify(full)}`);
+  }
+
+    const employmentTypeCases = [
+    {
+      jobTypes: ['Intern', 'Full time'],
+      expectedEmployment: 'internship',
+      expectedWorkingTime: 'full_time',
+      label: 'Intern + Full time',
+      id: 'intern-full-time',
+    },
+    {
+      jobTypes: ['Intern', 'Part time'],
+      expectedEmployment: 'internship',
+      expectedWorkingTime: 'part_time',
+      label: 'Intern + Part time',
+      id: 'intern-part-time',
+    },
+    {
+      jobTypes: ['Freelance', 'Full time'],
+      expectedEmployment: 'freelance',
+      expectedWorkingTime: 'full_time',
+      label: 'Freelance + Full time',
+      id: 'freelance-full-time',
+    },
+    {
+      jobTypes: ['Temporary', 'Full time'],
+      expectedEmployment: 'temporary',
+      expectedWorkingTime: 'full_time',
+      label: 'Temporary + Full time',
+      id: 'temporary-full-time',
+    },
+    {
+      jobTypes: ['Full or part time'],
+      expectedEmployment: '',
+      expectedWorkingTime: '',
+      label: 'Full or part time',
+      id: 'full-or-part-time',
+    },
+    {
+      jobTypes: ['Intern', 'Full or part time'],
+      expectedEmployment: 'internship',
+      expectedWorkingTime: '',
+      label: 'Intern + Full or part time',
+      id: 'intern-full-or-part-time',
+    },
+  ];
+
+  for (const {
+    jobTypes,
+    expectedEmployment,
+    expectedWorkingTime,
+    label,
+    id,
+  } of employmentTypeCases) {
+    const job = normalizeArbeitnowJob({
+      title: label,
+      url: `https://www.arbeitnow.com/jobs/${id}`,
+      job_types: jobTypes,
+    }, 'Fallback');
+
+    if (job?.employmentTypeRaw === expectedEmployment
+        && job?.workingTimeRaw === expectedWorkingTime)
+      pass(`normalizeArbeitnowJob separates ${label}`);
+    else fail(`normalizeArbeitnowJob ${label} metadata = ${JSON.stringify({
+      employmentTypeRaw: job?.employmentTypeRaw,
+      workingTimeRaw: job?.workingTimeRaw,
+    })}`);
+  }
+
+  if (typeof full?.description === 'string'
+      && full.description.includes('Build AI systems')
+      && full.description.includes('Python')
+      && full.description.includes('SQL')
+      && !full.description.includes('&lt;')
+      && !full.description.includes('<p>')) {
+    pass('normalizeArbeitnowJob decodes and converts HTML description to plain text');
+  } else {
+    fail(`normalizeArbeitnowJob description = ${JSON.stringify(full?.description)}`);
+  }
+
+  if (Array.isArray(full?.tags)
+      && full.tags.length === 2
+      && full.tags[0] === 'data'
+      && full.tags[1] === 'python') {
+    pass('normalizeArbeitnowJob normalizes string tags');
+  } else {
+    fail(`normalizeArbeitnowJob tags = ${JSON.stringify(full?.tags)}`);
+  }
+
+  if (full?.rawPayload === fullPayload)
+    pass('normalizeArbeitnowJob preserves the original raw payload');
+  else fail('normalizeArbeitnowJob does not preserve rawPayload');
 
   // remote:true appends "Remote" to the location.
   const remoteJob = normalizeArbeitnowJob({ title: 'R', url: 'https://www.arbeitnow.com/jobs/r', location: 'Munich', remote: true }, 'X');
@@ -43,6 +156,21 @@ try {
   } else {
     fail(`normalizeArbeitnowJob company fallbacks = ${JSON.stringify({ a: coFromEntry?.company, b: coDefault?.company })}`);
   }
+
+  // Arbeitnow also serves valid postings from its UK host.
+  const ukJob = normalizeArbeitnowJob(
+    {
+      title: 'UK Role',
+      url: 'https://www.arbeitnow.co.uk/jobs/companies/acme/uk-role-123',
+      company_name: 'Acme UK',
+      location: 'London',
+    },
+    'Fallback',
+  );
+  if (ukJob?.title === 'UK Role'
+      && ukJob?.url === 'https://www.arbeitnow.co.uk/jobs/companies/acme/uk-role-123')
+    pass('normalizeArbeitnowJob accepts the trusted www.arbeitnow.co.uk host');
+  else fail(`normalizeArbeitnowJob UK host row = ${JSON.stringify(ukJob)}`);
 
   // drops: empty title, missing url, non-https url, malformed url, non-object.
   const drops = [
