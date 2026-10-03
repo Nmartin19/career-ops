@@ -147,7 +147,7 @@ function normalizeParserJob(job, entry) {
   );
   if (!title || !url) return null;
 
-    return {
+  return {
     title,
     url,
     company: String(job.company || entry.name || '').trim(),
@@ -157,6 +157,21 @@ function normalizeParserJob(job, entry) {
       : '',
     workingTimeRaw: typeof job.workingTimeRaw === 'string'
       ? job.workingTimeRaw.trim()
+      : '',
+    seniority: typeof job.seniority === 'string'
+      ? job.seniority.trim()
+      : '',
+    salaryMin: Number.isFinite(job.salaryMin)
+      ? job.salaryMin
+      : null,
+    salaryMax: Number.isFinite(job.salaryMax)
+      ? job.salaryMax
+      : null,
+    salaryCurrency: typeof job.salaryCurrency === 'string'
+      ? job.salaryCurrency.trim()
+      : '',
+    salaryPeriod: typeof job.salaryPeriod === 'string'
+      ? job.salaryPeriod.trim()
       : '',
     rawPayload: job.rawPayload ?? null,
   };

@@ -14,7 +14,7 @@ try {
   else fail(`jobicy.id is ${JSON.stringify(jobicy.id)}`);
 
   const hit = jobicy.detect({ name: 'Jobicy Board', provider: 'jobicy' });
-  if (hit && hit.url === 'https://jobicy.com/api/v2/remote-jobs?count=50') {
+  if (hit && hit.url === 'https://jobicy.com/api/v2/remote-jobs?count=200') {
     pass('jobicy.detect() claims explicit provider config');
   } else {
     fail(`jobicy.detect() returned ${JSON.stringify(hit)}`);
@@ -29,11 +29,20 @@ try {
   const sample = {
     jobs: [
       {
+        id: 154223,
         jobTitle: 'Senior AI Engineer',
         companyName: 'Acme Corp',
         jobGeo: 'Worldwide',
         url: 'https://jobicy.com/jobs/senior-ai-engineer',
         pubDate: '2026-06-27T10:00:00',
+        jobDescription: '<p>Build <strong>AI</strong> systems.</p>',
+        jobType: ['Full-Time'],
+        jobLevel: 'Senior',
+        jobIndustry: ['Software Engineering'],
+        salaryMin: 5291,
+        salaryMax: 7559,
+        salaryCurrency: 'EUR',
+        salaryPeriod: 'monthly',
       },
       {
         jobTitle: 'Staff Backend Developer',
@@ -92,6 +101,74 @@ try {
     fail(`row 0 postedAt = ${JSON.stringify(jobs[0]?.postedAt)}`);
   }
 
+  if (
+    jobs[0]?.sourceJobId === 154223
+    && jobs[0]?.description === 'Build AI systems.'
+    && jobs[0]?.employmentTypeRaw === ''
+    && jobs[0]?.workingTimeRaw === 'full_time'
+    && jobs[0]?.seniority === 'Senior'
+    && jobs[0]?.salaryMin === 5291
+    && jobs[0]?.salaryMax === 7559
+    && jobs[0]?.salaryCurrency === 'EUR'
+    && jobs[0]?.salaryPeriod === 'monthly'
+    && jobs[0]?.tags?.[0] === 'Software Engineering'
+    && jobs[0]?.category === 'Software Engineering'
+    && jobs[0]?.rawPayload?.id === 154223
+  ) {
+    pass('parseJobicyResponse preserves rich Jobicy metadata');
+  } else {
+    fail(`row 0 metadata = ${JSON.stringify(jobs[0])}`);
+  }
+
+  const jobTypeCases = [
+    {
+      jobType: ['Contract'],
+      expectedEmployment: 'contractor',
+      expectedWorkingTime: '',
+      label: 'Contract',
+      id: 'contract-role',
+    },
+    {
+      jobType: ['Part-Time'],
+      expectedEmployment: '',
+      expectedWorkingTime: 'part_time',
+      label: 'Part-Time',
+      id: 'part-time-role',
+    },
+  ];
+
+  for (const {
+    jobType,
+    expectedEmployment,
+    expectedWorkingTime,
+    label,
+    id,
+  } of jobTypeCases) {
+    const [job] = parseJobicyResponse({
+      jobs: [
+        {
+          jobTitle: `${label} Role`,
+          companyName: 'Fixture Company',
+          jobGeo: 'Spain',
+          url: `https://jobicy.com/jobs/${id}`,
+          jobType,
+        },
+      ],
+    });
+
+    if (
+      job?.employmentTypeRaw === expectedEmployment
+      && job?.workingTimeRaw === expectedWorkingTime
+    ) {
+      pass(`parseJobicyResponse separates ${label} employment and working time`);
+    } else {
+      fail(`parseJobicyResponse ${label} metadata = ${JSON.stringify({
+        employmentTypeRaw: job?.employmentTypeRaw,
+        workingTimeRaw: job?.workingTimeRaw,
+      })}`);
+    }
+  }
+
   if (jobs[1]?.company === 'Globex' && jobs[1]?.title === 'Staff Backend Developer') {
     pass('parseJobicyResponse parses second job correctly');
   } else {
@@ -111,7 +188,7 @@ try {
     { fetchJson: async (url, opts) => { capturedUrl = url; capturedOpts = opts; return sample; } },
   );
 
-  if (capturedUrl === 'https://jobicy.com/api/v2/remote-jobs?count=50') {
+  if (capturedUrl === 'https://jobicy.com/api/v2/remote-jobs?count=200') {
     pass('jobicy.fetch() requests the pinned JSON feed URL');
   } else {
     fail(`jobicy.fetch() requested ${JSON.stringify(capturedUrl)}`);

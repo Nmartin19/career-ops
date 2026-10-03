@@ -148,13 +148,23 @@ tracked_companies:
         if (
           offer?.employmentTypeRaw === ''
           && offer?.workingTimeRaw === 'full_time'
+          && offer?.seniority === 'senior'
+          && offer?.salaryMin === 50000
+          && offer?.salaryMax === 70000
+          && offer?.salaryCurrency === 'EUR'
+          && offer?.salaryPeriod === 'yearly'
           && offer?.rawPayload?.fixtureJobType === 'full_time'
         ) {
-          pass('JSON output preserves employment, working-time, and raw metadata');
+          pass('JSON output preserves employment, working-time, salary, seniority, and raw metadata');
         } else {
           fail(`JSON output metadata = ${JSON.stringify({
             employmentTypeRaw: offer?.employmentTypeRaw,
             workingTimeRaw: offer?.workingTimeRaw,
+            seniority: offer?.seniority,
+            salaryMin: offer?.salaryMin,
+            salaryMax: offer?.salaryMax,
+            salaryCurrency: offer?.salaryCurrency,
+            salaryPeriod: offer?.salaryPeriod,
             rawPayload: offer?.rawPayload,
           })}`);
         }

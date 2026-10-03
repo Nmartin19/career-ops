@@ -1,12 +1,14 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
 
+import { decodeEntities } from './_html-entities.mjs';
+
 // Jobicy provider — board-wide remote-jobs aggregator feed
-// (https://jobicy.com/api/v2/remote-jobs?count=50). Returns { jobs: [...] }.
+// (https://jobicy.com/api/v2/remote-jobs?count=200). Returns { jobs: [...] }.
 //
 // Wire in via a `job_boards:` entry with `provider: jobicy`.
 
-const FEED_URL = 'https://jobicy.com/api/v2/remote-jobs?count=50';
+const FEED_URL = 'https://jobicy.com/api/v2/remote-jobs?count=200';
 
 /** @type {Provider} */
 export default {
@@ -32,6 +34,47 @@ export default {
     return parseJobicyResponse(json, entry.name || 'Jobicy');
   },
 };
+
+function htmlToText(value) {
+  if (typeof value !== 'string') return '';
+
+  return decodeEntities(
+    value
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]*>/g, ' '),
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter(item => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function employmentTypeFromJobTypes(jobTypes) {
+  const types = normalizeStringArray(jobTypes)
+    .map(type => type.toLowerCase().replace(/[-\s]+/g, '_'));
+
+  if (types.includes('contract') || types.includes('contractor')) return 'contractor';
+
+  return '';
+}
+
+function workingTimeFromJobTypes(jobTypes) {
+  const types = normalizeStringArray(jobTypes)
+    .map(type => type.toLowerCase().replace(/[-\s]+/g, '_'));
+
+  if (types.includes('full_time')) return 'full_time';
+  if (types.includes('part_time')) return 'part_time';
+
+  return '';
+}
 
 /**
  * Parse a Jobicy API response. Exported for unit tests.
@@ -68,16 +111,35 @@ export function parseJobicyResponse(json, defaultCompany = 'Jobicy') {
       }
       if (!url) return null;
 
-      const company = typeof j.companyName === 'string' && j.companyName.trim() ? j.companyName.trim() : defaultCompany;
+      const company = typeof j.companyName === 'string' && j.companyName.trim()
+        ? j.companyName.trim()
+        : defaultCompany;
       const location = typeof j.jobGeo === 'string' ? j.jobGeo.trim() : '';
       const postedAt = toEpochMs(j.pubDate);
+      const tags = normalizeStringArray(j.jobIndustry);
 
       return {
         title,
         url,
         company,
         location,
+        sourceJobId: Number.isFinite(j.id) ? j.id : '',
+        description: htmlToText(j.jobDescription),
+        employmentTypeRaw: employmentTypeFromJobTypes(j.jobType),
+        workingTimeRaw: workingTimeFromJobTypes(j.jobType),
+        seniority: typeof j.jobLevel === 'string' ? j.jobLevel.trim() : '',
+        salaryMin: Number.isFinite(j.salaryMin) ? j.salaryMin : null,
+        salaryMax: Number.isFinite(j.salaryMax) ? j.salaryMax : null,
+        salaryCurrency: typeof j.salaryCurrency === 'string'
+          ? j.salaryCurrency.trim()
+          : '',
+        salaryPeriod: typeof j.salaryPeriod === 'string'
+          ? j.salaryPeriod.trim().toLowerCase()
+          : '',
+        tags,
+        category: tags[0] || '',
         postedAt,
+        rawPayload: j,
       };
     })
     .filter(j => j !== null);

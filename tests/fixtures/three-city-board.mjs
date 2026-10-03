@@ -17,10 +17,15 @@ console.log(JSON.stringify([
   location: 'Costa Mesa, CA',
   employmentTypeRaw: '',
   workingTimeRaw: 'full_time',
+  seniority: 'senior',
+  salaryMin: 50000,
+  salaryMax: 70000,
+  salaryCurrency: 'EUR',
+  salaryPeriod: 'yearly',
   rawPayload: {
     fixtureJobType: 'full_time',
+    },
   },
-},
   { title: ROLE, url: 'https://boards.example.com/fixture/1002', company: 'Fixture Defense', location: 'Washington, DC' },
   { title: ROLE, url: 'https://boards.example.com/fixture/1003', company: 'Fixture Defense', location: 'Huntsville, AL' },
 ]));
