@@ -173,6 +173,14 @@ function normalizeParserJob(job, entry) {
     salaryPeriod: typeof job.salaryPeriod === 'string'
       ? job.salaryPeriod.trim()
       : '',
+    tags: Array.isArray(job.tags)
+      ? job.tags
+        .map(tag => String(tag).trim())
+        .filter(Boolean)
+      : [],
+    expiresAt: Number.isFinite(job.expiresAt)
+      ? job.expiresAt
+      : null,
     rawPayload: job.rawPayload ?? null,
   };
 }

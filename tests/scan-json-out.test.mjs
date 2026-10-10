@@ -153,9 +153,11 @@ tracked_companies:
           && offer?.salaryMax === 70000
           && offer?.salaryCurrency === 'EUR'
           && offer?.salaryPeriod === 'yearly'
+          && JSON.stringify(offer?.tags) === JSON.stringify(['SQL', 'Python', 'Power BI'])
+          && offer?.expiresAt === 1765584000000
           && offer?.rawPayload?.fixtureJobType === 'full_time'
         ) {
-          pass('JSON output preserves employment, working-time, salary, seniority, and raw metadata');
+          pass('JSON output preserves employment, working-time, salary, seniority, tags, expiry, and raw metadata');
         } else {
           fail(`JSON output metadata = ${JSON.stringify({
             employmentTypeRaw: offer?.employmentTypeRaw,
@@ -165,6 +167,8 @@ tracked_companies:
             salaryMax: offer?.salaryMax,
             salaryCurrency: offer?.salaryCurrency,
             salaryPeriod: offer?.salaryPeriod,
+            tags: offer?.tags,
+            expiresAt: offer?.expiresAt,
             rawPayload: offer?.rawPayload,
           })}`);
         }

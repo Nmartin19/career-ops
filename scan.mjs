@@ -1984,6 +1984,7 @@ if (!dryRun && jsonOutPath) {
       location: offer.location || '',
       description: offer.description || '',
       postedAt: offer.postedAt ?? null,
+      expiresAt: offer.expiresAt ?? null,
 
       salary: offer.salary ?? null,
       employmentTypeRaw: offer.employmentTypeRaw || '',

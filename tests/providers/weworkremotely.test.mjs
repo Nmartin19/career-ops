@@ -33,15 +33,29 @@ try {
     <item>
       <title><![CDATA[Acme & Co: Staff AI Engineer]]></title>
       <link>https://weworkremotely.com/remote-jobs/acme-staff-ai-engineer</link>
+      <guid>https://weworkremotely.com/remote-jobs/acme-staff-ai-engineer</guid>
       <pubDate>Thu, 13 Nov 2025 14:10:41 +0000</pubDate>
+      <expires_at>Sat, 13 Dec 2025 14:10:41 +0000</expires_at>
       <region><![CDATA[Anywhere in the World]]></region>
+      <country>Spain</country>
+      <state></state>
+      <skills>SQL, Python, Power BI</skills>
       <category>Programming</category>
+      <type>Full-Time</type>
+      <description>&lt;p&gt;Build analytics solutions with &lt;strong&gt;SQL&lt;/strong&gt;.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Principal Platform Engineer &amp; Tooling</title>
       <link>https://weworkremotely.com/remote-jobs/example-platform-engineer</link>
+      <guid>https://weworkremotely.com/remote-jobs/example-platform-engineer</guid>
       <pubDate>Fri, 02 Jan 2026 09:00:00 +0000</pubDate>
+      <region></region>
+      <country></country>
+      <state></state>
+      <skills></skills>
       <category>DevOps and Sysadmin</category>
+      <type>Contract</type>
+      <description><![CDATA[<p>Platform engineering and infrastructure.</p>]]></description>
     </item>
     <item>
       <title>Missing Link Inc: Dropped Role</title>
@@ -95,10 +109,103 @@ try {
     fail(`row 1 = ${JSON.stringify(jobs[1])}`);
   }
 
-  if (jobs[1]?.location === 'DevOps and Sysadmin') {
-    pass('parseWwrFeed falls back to <category> when <region> is absent');
+  if (jobs[1]?.location === '' && jobs[1]?.category === 'DevOps and Sysadmin') {
+    pass('parseWwrFeed keeps category separate from geographic location');
   } else {
-    fail(`row 1 location = ${JSON.stringify(jobs[1]?.location)}`);
+    fail(`row 1 location/category = ${JSON.stringify({
+      location: jobs[1]?.location,
+      category: jobs[1]?.category,
+    })}`);
+  }
+
+  if (jobs[0]?.category === 'Programming') {
+    pass('parseWwrFeed preserves job category');
+  } else {
+    fail(`row 0 category = ${JSON.stringify(jobs[0]?.category)}`);
+  }
+
+  if (
+    jobs[0]?.type === 'Full-Time' &&
+    jobs[0]?.workingTimeRaw === 'Full-Time' &&
+    jobs[0]?.employmentTypeRaw === '' &&
+    jobs[1]?.type === 'Contract' &&
+    jobs[1]?.workingTimeRaw === '' &&
+    jobs[1]?.employmentTypeRaw === 'Contract'
+  ) {
+    pass('parseWwrFeed maps RSS type without confusing working time and employment type');
+  } else {
+    fail(`type mapping = ${JSON.stringify(jobs.map(job => ({
+      type: job.type,
+      workingTimeRaw: job.workingTimeRaw,
+      employmentTypeRaw: job.employmentTypeRaw,
+    })))}`);
+  }
+
+  if (jobs[0]?.country === 'Spain' && jobs[0]?.state === '') {
+    pass('parseWwrFeed preserves country and empty state');
+  } else {
+    fail(`row 0 country/state = ${JSON.stringify({
+      country: jobs[0]?.country,
+      state: jobs[0]?.state,
+    })}`);
+  }
+
+  if (
+    jobs[0]?.skills === 'SQL, Python, Power BI' &&
+    JSON.stringify(jobs[0]?.tags) === JSON.stringify(['SQL', 'Python', 'Power BI']) &&
+    jobs[1]?.skills === '' &&
+    Array.isArray(jobs[1]?.tags) &&
+    jobs[1].tags.length === 0
+  ) {
+    pass('parseWwrFeed preserves source skills and normalizes them into tags');
+  } else {
+    fail(`skills/tags = ${JSON.stringify(jobs.map(job => ({
+      skills: job.skills,
+      tags: job.tags,
+    })))}`);
+  }
+
+  const expectedDescription = '<p>Build analytics solutions with <strong>SQL</strong>.</p>';
+
+  if (jobs[0]?.description === expectedDescription) {
+    pass('parseWwrFeed decodes and preserves complete HTML description');
+  } else {
+    fail(`row 0 description = ${JSON.stringify(jobs[0]?.description)}`);
+  }
+
+  if (jobs[1]?.description === '<p>Platform engineering and infrastructure.</p>') {
+    pass('parseWwrFeed preserves HTML description inside CDATA');
+  } else {
+    fail(`row 1 description = ${JSON.stringify(jobs[1]?.description)}`);
+  }
+
+  if (jobs[0]?.expiresAt === Date.parse('Sat, 13 Dec 2025 14:10:41 +0000')) {
+    pass('parseWwrFeed parses expires_at into epoch milliseconds');
+  } else {
+    fail(`row 0 expiresAt = ${JSON.stringify(jobs[0]?.expiresAt)}`);
+  }
+
+  if (
+    jobs[0]?.guid === 'https://weworkremotely.com/remote-jobs/acme-staff-ai-engineer' &&
+    jobs[0]?.sourceJobId === 'https://weworkremotely.com/remote-jobs/acme-staff-ai-engineer'
+  ) {
+    pass('parseWwrFeed preserves GUID and maps it to sourceJobId');
+  } else {
+    fail(`row 0 guid/sourceJobId = ${JSON.stringify({
+      guid: jobs[0]?.guid,
+      sourceJobId: jobs[0]?.sourceJobId,
+    })}`);
+  }
+
+  if (
+    typeof jobs[0]?.rawPayload === 'string' &&
+    jobs[0].rawPayload.includes('<title><![CDATA[Acme & Co: Staff AI Engineer]]></title>') &&
+    jobs[0].rawPayload.includes('<description>') &&
+    jobs[0].rawPayload.includes('<expires_at>')
+  ) {
+    pass('parseWwrFeed preserves original RSS item XML as rawPayload');
+  } else {
+    fail('row 0 rawPayload is missing or incomplete');
   }
 
   if (parseWwrFeed('', 'X').length === 0 && parseWwrFeed(null, 'X').length === 0) {

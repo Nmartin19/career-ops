@@ -124,11 +124,35 @@ function splitTitle(rawTitle, defaultCompany) {
  *
  * @param {string} xml - raw RSS feed body
  * @param {string} [defaultCompany] - fallback company for unsplittable titles
- * @returns {Array<{title: string, url: string, company: string, location: string, postedAt?: number}>}
+ * @returns {Array<{
+ *   title: string,
+ *   url: string,
+ *   company: string,
+ *   location: string,
+ *   category: string,
+ *   country: string,
+ *   state: string,
+ *   skills: string,
+ *   tags: string[],
+ *   type: string,
+ *   description: string,
+ *   guid: string,
+ *   sourceJobId: string,
+ *   employmentTypeRaw: string,
+ *   workingTimeRaw: string,
+ *   postedAt?: number,
+ *   expiresAt?: number,
+ *   rawPayload: string
+ * }>}
  */
 export function parseWwrFeed(xml, defaultCompany = 'We Work Remotely') {
   if (typeof xml !== 'string') return [];
-  const fallback = typeof defaultCompany === 'string' && defaultCompany.trim() ? defaultCompany.trim() : 'We Work Remotely';
+
+  const fallback =
+    typeof defaultCompany === 'string' && defaultCompany.trim()
+      ? defaultCompany.trim()
+      : 'We Work Remotely';
+
   const jobs = [];
   const blocks = xml.match(/<item\b[^>]*>[\s\S]*?<\/item>/gi) || [];
 
@@ -140,14 +164,58 @@ export function parseWwrFeed(xml, defaultCompany = 'We Work Remotely') {
     if (!rawTitle) continue;
 
     const { company, title } = splitTitle(rawTitle, fallback);
-    const location = tagText(item, 'region') || tagText(item, 'category');
+
+    // Preserve geographic location independently of job category.
+    const location = tagText(item, 'region');
+    const category = tagText(item, 'category');
+
+    // Preserve additional fields provided by the RSS source.
+    const country = tagText(item, 'country');
+    const state = tagText(item, 'state');
+    const skills = tagText(item, 'skills');
+
+    // WWR exposes skills as a human-readable list. Preserve the original text
+    // and also normalize it into tags for the shared Career-Ops bridge.
+    const tags = skills
+      ? skills
+        .split(',')
+        .map(skill => skill.trim().replace(/^and\s+/i, ''))
+        .filter(Boolean)
+      : [];
+
+    const type = tagText(item, 'type');
+    const description = tagText(item, 'description');
+    const guid = tagText(item, 'guid');
+
+    // WWR currently exposes Full-Time as working time and Contract as
+    // employment arrangement. Keep the two concepts separate.
+    const workingTimeRaw = type === 'Full-Time' ? type : '';
+    const employmentTypeRaw = type === 'Contract' ? type : '';
+
+    const postedAt = toEpochMs(tagText(item, 'pubDate'));
+    const expiresAt = toEpochMs(tagText(item, 'expires_at'));
 
     jobs.push({
       title,
       company,
       location,
+      category,
+      country,
+      state,
+      skills,
+      tags,
+      type,
+      description,
+      guid,
+      sourceJobId: guid || url,
+      employmentTypeRaw,
+      workingTimeRaw,
       url,
-      postedAt: toEpochMs(tagText(item, 'pubDate')),
+      postedAt,
+      expiresAt,
+
+      // Original XML item, preserved without normalization or truncation.
+      rawPayload: item,
     });
   }
 
