@@ -15,7 +15,7 @@ console.log('\nProvider — ashby');
 try {
   const ashbyModule = await import(pathToFileURL(join(ROOT, 'providers/ashby.mjs')).href);
   const ashby = ashbyModule.default;
-  const { parseCompensation } = ashbyModule;
+  const { parseCompensation, parseSalaryBands } = ashbyModule;
 
   if (ashby.id === 'ashby') pass('ashby.id is "ashby"');
   else fail(`ashby.id is ${JSON.stringify(ashby.id)}`);
@@ -130,13 +130,330 @@ try {
     fail(`parseCompensation(swapped) = ${JSON.stringify(swapped)}`);
   }
 
+  // compensationTiers — preserve provider order/source units and isolate
+  // malformed or ambiguous tiers without dropping their parent jobs.
+  const singleTierJob = {
+    id: 'single-tier',
+    title: 'Single Tier Role',
+    jobUrl: 'https://jobs.ashbyhq.com/acme/single-tier',
+    compensation: {
+      compensationTiers: [
+        {
+          id: 'eu-tier',
+          title: 'EU',
+          components: [
+            { compensationType: 'Bonus', interval: '1 YEAR', currencyCode: 'EUR', minValue: null, maxValue: null },
+            { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 35000, maxValue: 45000 },
+            { compensationType: 'EquityPercentage', interval: 'NONE', currencyCode: null, minValue: null, maxValue: null },
+          ],
+        },
+      ],
+    },
+  };
+
+  const multiTierJob = {
+    id: 'multi-tier',
+    title: 'Multi Tier Role',
+    jobUrl: 'https://jobs.ashbyhq.com/acme/multi-tier',
+    compensation: {
+      // Even if a future payload also exposes legacy top-level fields, tiers
+      // make the salary regional and therefore unsuitable for auto-selection.
+      interval: '1 YEAR',
+      minValue: 1,
+      maxValue: 2,
+      currency: 'EUR',
+      compensationTiers: [
+        {
+          id: 'us-tier',
+          title: 'United States',
+          components: [
+            { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'USD', minValue: 90000, maxValue: 120000 },
+          ],
+        },
+        {
+          id: 'uk-tier',
+          title: 'United Kingdom',
+          components: [
+            { compensationType: 'Commission', interval: '1 YEAR', currencyCode: 'GBP', minValue: null, maxValue: null },
+            { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'GBP', minValue: 70000, maxValue: 95000 },
+          ],
+        },
+      ],
+    },
+  };
+
+  const invalidTierJob = {
+    id: 'invalid-tiers',
+    title: 'Invalid Tier Role',
+    jobUrl: 'https://jobs.ashbyhq.com/acme/invalid-tiers',
+    compensation: {
+      compensationTiers: [
+        { id: 'negative', title: 'Negative', components: [
+          { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: -1, maxValue: 50000 },
+        ] },
+        { id: 'string', title: 'String amount', components: [
+          { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: '40000', maxValue: 50000 },
+        ] },
+        { id: 'inverted', title: 'Inverted', components: [
+          { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 60000, maxValue: 50000 },
+        ] },
+        { id: 'missing-components', title: 'Malformed' },
+        { id: 'ambiguous', title: 'Two salaries', components: [
+          { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 40000, maxValue: 50000 },
+          { compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 45000, maxValue: 55000 },
+        ] },
+      ],
+    },
+  };
+
+  const nullAmountJob = {
+    id: 'null-amounts',
+    title: 'Null Amount Role',
+    jobUrl: 'https://jobs.ashbyhq.com/acme/null-amounts',
+    compensation: { compensationTiers: [{
+      id: null,
+      title: 'Worldwide',
+      components: [{
+        compensationType: 'Salary', interval: '1 YEAR', currencyCode: null, minValue: null, maxValue: null,
+      }],
+    }] },
+  };
+
+  const unknownIntervalJob = {
+    id: 'unknown-interval',
+    title: 'Unknown Interval Role',
+    jobUrl: 'https://jobs.ashbyhq.com/acme/unknown-interval',
+    compensation: { compensationTiers: [{
+      id: 'lunar',
+      title: 'Lunar',
+      components: [{
+        compensationType: 'Salary', interval: '7 MOON', currencyCode: 'USD', minValue: 100, maxValue: 200,
+      }],
+    }] },
+  };
+
+  const hourlyTierJob = {
+    id: 'hourly-tier',
+    title: 'Hourly Tier Role',
+    jobUrl: 'https://jobs.ashbyhq.com/acme/hourly-tier',
+    compensation: { compensationTiers: [{
+      id: 'hourly',
+      title: 'Hourly',
+      components: [{
+        compensationType: 'Salary', interval: '1 HOUR', currencyCode: 'USD', minValue: 50, maxValue: 70,
+      }],
+    }] },
+  };
+
+  const directBands = parseSalaryBands(multiTierJob);
+  if (JSON.stringify(directBands.map((band) => band.tierId)) === JSON.stringify(['us-tier', 'uk-tier'])
+      && JSON.stringify(directBands.map((band) => band.currencyCode)) === JSON.stringify(['USD', 'GBP'])) {
+    pass('parseSalaryBands() preserves tier order and distinct regional currencies');
+  } else {
+    fail(`parseSalaryBands(multi tier) = ${JSON.stringify(directBands)}`);
+  }
+
+  const tierWarnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => { tierWarnings.push(args.join(' ')); };
+  let tierRows;
+  try {
+    tierRows = await ashby.fetch(
+      { name: 'Acme', careers_url: 'https://jobs.ashbyhq.com/acme' },
+      { fetchJson: async () => ({
+        jobs: [singleTierJob, multiTierJob, { id: 'no-compensation' }, nullAmountJob, invalidTierJob, unknownIntervalJob, hourlyTierJob],
+      }) },
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  const singleTierRow = tierRows[0];
+  if (JSON.stringify(singleTierRow?.salaryBands) === JSON.stringify([{
+    tierId: 'eu-tier',
+    tierName: 'EU',
+    minValue: 35000,
+    maxValue: 45000,
+    currencyCode: 'EUR',
+    interval: '1 YEAR',
+  }])) {
+    pass('ashby.fetch() extracts one Salary band and ignores Bonus/Equity components');
+  } else {
+    fail(`ashby.fetch() single salaryBands = ${JSON.stringify(singleTierRow?.salaryBands)}`);
+  }
+
+  if (singleTierRow?.salary?.min === 35000
+      && singleTierRow?.salary?.max === 45000
+      && singleTierRow?.salary?.currency === 'EUR'
+      && singleTierRow?.salaryMin === 35000
+      && singleTierRow?.salaryMax === 45000
+      && singleTierRow?.salaryCurrency === 'EUR'
+      && singleTierRow?.salaryPeriod === 'yearly') {
+    pass('a single unambiguous tier populates legacy and structured simple salary fields');
+  } else {
+    fail(`ashby.fetch() single simple salary = ${JSON.stringify(singleTierRow)}`);
+  }
+
+  if (singleTierRow?.rawPayload === singleTierJob
+      && singleTierRow.rawPayload.compensation.compensationTiers[0].components.length === 3) {
+    pass('tier normalization preserves the complete raw payload including bonus and equity');
+  } else {
+    fail('tier normalization changed or replaced rawPayload');
+  }
+
+  const multiTierRow = tierRows[1];
+  if (multiTierRow?.salaryBands?.length === 2
+      && multiTierRow.salaryBands[0].tierId === 'us-tier'
+      && multiTierRow.salaryBands[1].tierId === 'uk-tier'
+      && multiTierRow.salary === null
+      && multiTierRow.salaryMin === null
+      && multiTierRow.salaryMax === null
+      && multiTierRow.salaryCurrency === ''
+      && multiTierRow.salaryPeriod === '') {
+    pass('multiple bands remain ordered and do not produce an arbitrary simple salary');
+  } else {
+    fail(`ashby.fetch() multi-tier normalization = ${JSON.stringify(multiTierRow)}`);
+  }
+
+  if (Array.isArray(tierRows[2]?.salaryBands) && tierRows[2].salaryBands.length === 0
+      && tierRows[2].salary === null) {
+    pass('ashby.fetch() emits no bands when compensation is absent');
+  } else {
+    fail(`ashby.fetch() absent compensation = ${JSON.stringify(tierRows[2])}`);
+  }
+
+  if (JSON.stringify(tierRows[3]?.salaryBands) === JSON.stringify([{
+    tierId: null,
+    tierName: 'Worldwide',
+    minValue: null,
+    maxValue: null,
+    currencyCode: null,
+    interval: '1 YEAR',
+  }]) && tierRows[3].salary === null) {
+    pass('salary bands preserve explicit null amounts and metadata without inventing a salary');
+  } else {
+    fail(`ashby.fetch() null salary amounts = ${JSON.stringify(tierRows[3])}`);
+  }
+
+  if (tierRows[4]?.salaryBands?.length === 0
+      && tierRows[4].rawPayload === invalidTierJob
+      && tierWarnings.some((warning) => warning.includes('multiple Salary components'))) {
+    pass('invalid and ambiguous tiers are skipped, reported, and do not drop the offer/raw payload');
+  } else {
+    fail(`ashby.fetch() invalid tiers = ${JSON.stringify({ row: tierRows[4], warnings: tierWarnings })}`);
+  }
+
+  if (tierRows[5]?.salaryBands?.[0]?.interval === '7 MOON'
+      && tierRows[5].salary === null
+      && tierRows[5].salaryMin === null
+      && tierRows[5].salaryMax === null
+      && tierRows[5].salaryPeriod === '') {
+    pass('unknown intervals remain in salaryBands but do not create incompatible simple salary fields');
+  } else {
+    fail(`ashby.fetch() unknown interval = ${JSON.stringify(tierRows[5])}`);
+  }
+
+  if (tierRows[6]?.salaryBands?.[0]?.minValue === 50
+      && tierRows[6].salaryBands[0].maxValue === 70
+      && tierRows[6].salaryBands[0].interval === '1 HOUR'
+      && tierRows[6].salary?.min === 50 * 2080
+      && tierRows[6].salary?.max === 70 * 2080
+      && tierRows[6].salaryMin === 50 * 2080
+      && tierRows[6].salaryMax === 70 * 2080
+      && tierRows[6].salaryPeriod === 'yearly') {
+    pass('salaryBands keep source-unit amounts while single-band simple fields retain annualization');
+  } else {
+    fail(`ashby.fetch() hourly tier = ${JSON.stringify(tierRows[6])}`);
+  }
+
+
+  // Regression tests: missing currency and invalid source job IDs.
+  const validationJobs = await ashby.fetch(
+    { name: 'Acme', careers_url: 'https://jobs.ashbyhq.com/acme' },
+    {
+      fetchJson: async () => ({
+        jobs: [
+          {
+            ...singleTierJob,
+            id: 123,
+            compensation: {
+              compensationTiers: [{
+                id: 'no-currency',
+                title: 'EU',
+                components: [{
+                  compensationType: 'Salary',
+                  interval: '1 YEAR',
+                  currencyCode: null,
+                  minValue: 35000,
+                  maxValue: 45000,
+                }],
+              }],
+            },
+          },
+          {
+            ...singleTierJob,
+            id: '  abc  ',
+          },
+        ],
+      }),
+    },
+  );
+
+  const missingCurrency = validationJobs[0];
+
+  if (missingCurrency?.salary === null
+      && missingCurrency.salaryMin === null
+      && missingCurrency.salaryMax === null
+      && missingCurrency.salaryBands[0].currencyCode === null
+      && missingCurrency.rawPayload.compensation.compensationTiers.length === 1) {
+    pass('a band without currency does not produce a simple salary');
+  } else {
+    fail('missing-currency salary validation failed');
+  }
+
+  if (validationJobs[0]?.sourceJobId === ''
+      && validationJobs[1]?.sourceJobId === 'abc'
+      && validationJobs[1]?.salaryMin === 35000) {
+    pass('sourceJobId rejects non-string IDs and trims valid IDs');
+  } else {
+    fail('sourceJobId validation failed');
+  }
+
+  // Workplace type: prefer Ashby's explicit value, and only infer Remote from
+  // a strictly true isRemote flag. A false flag is not evidence of Onsite.
+  const workplaceRows = await ashby.fetch(
+    { name: 'Acme', careers_url: 'https://jobs.ashbyhq.com/acme' },
+    {
+      fetchJson: async () => ({
+        jobs: [
+          { workplaceType: 'Remote', isRemote: false },
+          { workplaceType: 'Hybrid', isRemote: true },
+          { workplaceType: 'Onsite', isRemote: false },
+          { isRemote: true },
+          { isRemote: false },
+          {},
+        ],
+      }),
+    },
+  );
+
+  if (JSON.stringify(workplaceRows.map((row) => row.workplaceTypeRaw))
+      === JSON.stringify(['Remote', 'Hybrid', 'Onsite', 'Remote', '', ''])) {
+    pass('ashby.fetch() preserves explicit workplace types and only infers Remote from isRemote=true');
+  } else {
+    fail(`ashby.fetch() workplace types = ${JSON.stringify(workplaceRows.map((row) => row.workplaceTypeRaw))}`);
+  }
+
   // fetch() — request shape and normalization from the real posting-api
   // payload: { jobs: [{ title, jobUrl, location, secondaryLocations, publishedAt, compensation }] }.
   const sample = {
     jobs: [
       {
+        id: 'job-1234',
         title: 'Head of Applied AI',
         jobUrl: 'https://jobs.ashbyhq.com/acme/1234',
+        descriptionPlain: 'Lead the applied AI team.',
+        employmentType: 'FullTime',
         location: 'Canada',
         secondaryLocations: [
           { location: 'Europe', address: { postalAddress: { addressLocality: 'Berlin', addressCountry: 'Germany' } } },
@@ -179,18 +496,29 @@ try {
   if (fetched[0]?.title === 'Head of Applied AI'
       && fetched[0]?.url === 'https://jobs.ashbyhq.com/acme/1234'
       && fetched[0]?.company === 'Acme'
+      && fetched[0]?.sourceJobId === 'job-1234'
+      && fetched[0]?.description === 'Lead the applied AI team.'
+      && fetched[0]?.employmentTypeRaw === 'FullTime'
+      && fetched[0]?.workingTimeRaw === 'FullTime'
       && fetched[0]?.postedAt === Date.parse('2026-07-02T00:00:00.000Z')
       && fetched[0]?.salary && fetched[0].salary.min === 150000 && fetched[0].salary.max === 180000 && fetched[0].salary.currency === 'USD')
-    pass('ashby.fetch() maps title/jobUrl/entry.name/publishedAt/compensation');
+    pass('ashby.fetch() maps core fields and preserves Ashby enrichment fields');
   else fail(`ashby.fetch() row 0 = ${JSON.stringify(fetched[0])}`);
+
+  if (fetched[0]?.rawPayload === sample.jobs[0])
+    pass('ashby.fetch() preserves the complete original job object as rawPayload');
+  else fail('ashby.fetch() does not preserve the original job object as rawPayload');
 
   if (fetched[0]?.location === 'Canada · Europe · Berlin · Germany')
     pass('ashby.fetch() folds secondaryLocations (region/locality/country) into location, deduped, " · "-joined');
   else fail(`ashby.fetch() row 0 location = ${JSON.stringify(fetched[0]?.location)}`);
 
   if (fetched[1]?.title === '' && fetched[1]?.url === '' && fetched[1]?.location === ''
-      && fetched[1]?.salary === null && fetched[1]?.postedAt === undefined)
-    pass('ashby.fetch() tolerates a sparse job (empty strings, null salary, undefined postedAt for a bad date)');
+      && fetched[1]?.sourceJobId === '' && fetched[1]?.description === ''
+      && fetched[1]?.employmentTypeRaw === '' && fetched[1]?.workingTimeRaw === ''
+      && fetched[1]?.salary === null && fetched[1]?.postedAt === undefined
+      && fetched[1]?.rawPayload === sample.jobs[1])
+    pass('ashby.fetch() tolerates a sparse job while preserving rawPayload');
   else fail(`ashby.fetch() row 1 = ${JSON.stringify(fetched[1])}`);
 
   // Malformed response bodies → [], no crash.

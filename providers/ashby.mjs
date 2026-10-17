@@ -75,6 +75,115 @@ export function parseCompensation(job) {
   };
 }
 
+/**
+ * Preserve one optional string from an Ashby compensation tier. Ashby uses
+ * null for unavailable tier metadata; malformed non-string values are treated
+ * as unavailable while the untouched value remains available in rawPayload.
+ * @param {any} value
+ * @returns {string|null}
+ */
+function normalizeTierString(value) {
+  if (value == null) return null;
+  if (typeof value !== 'string') return null;
+  return value;
+}
+
+/**
+ * Normalize a salary-band amount without coercion. `undefined` means the
+ * source value was invalid; `null` means Ashby explicitly omitted the amount.
+ * @param {any} value
+ * @returns {number|null|undefined}
+ */
+function normalizeBandAmount(value) {
+  if (value == null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined;
+  return value;
+}
+
+/**
+ * Extract unambiguous Salary components from Ashby compensation tiers.
+ * Amounts and intervals stay in their source units; annualization belongs only
+ * to the legacy/simple salary fields. Invalid or ambiguous tiers are skipped
+ * without affecting the surrounding job, whose original data remains in
+ * rawPayload.
+ * @param {any} job
+ * @returns {Array<{
+ *   tierId: string|null,
+ *   tierName: string|null,
+ *   minValue: number|null,
+ *   maxValue: number|null,
+ *   currencyCode: string|null,
+ *   interval: string|null,
+ * }>}
+ */
+export function parseSalaryBands(job) {
+  const tiers = job?.compensation?.compensationTiers;
+  if (!Array.isArray(tiers)) return [];
+
+  const bands = [];
+  for (const tier of tiers) {
+    if (!tier || typeof tier !== 'object' || !Array.isArray(tier.components)) continue;
+
+  const salaryComponents = tier.components.filter(
+    /** @param {any} component */
+    (component) => component
+    && typeof component === 'object'
+    && component.compensationType === 'Salary',
+);
+
+    if (salaryComponents.length > 1) {
+      const tierId = normalizeTierString(tier.id) ?? '<unknown>';
+      console.warn(`ashby: compensation tier ${tierId} has multiple Salary components; skipping ambiguous tier`);
+      continue;
+    }
+    if (salaryComponents.length === 0) continue;
+
+    const salary = salaryComponents[0];
+    const minValue = normalizeBandAmount(salary.minValue);
+    const maxValue = normalizeBandAmount(salary.maxValue);
+
+    // Invalid numbers and inverted ranges cannot be represented faithfully by
+    // the common contract. Keep them only in rawPayload rather than repairing
+    // or combining them here.
+    if (minValue === undefined || maxValue === undefined) continue;
+    if (minValue != null && maxValue != null && minValue > maxValue) continue;
+
+    bands.push({
+      tierId: normalizeTierString(tier.id),
+      tierName: normalizeTierString(tier.title),
+      minValue,
+      maxValue,
+      currencyCode: normalizeTierString(salary.currencyCode),
+      interval: normalizeTierString(salary.interval),
+    });
+  }
+
+  return bands;
+}
+
+/**
+ * Derive the existing annualized salary shape from one source-unit band.
+ * Unlike legacy compensation, a missing tier interval is not defaulted to a
+ * year because that would invent information absent from the tier.
+ * @param {ReturnType<typeof parseSalaryBands>[number]} band
+ */
+function simpleSalaryFromBand(band) {
+  const currency = typeof band.currencyCode === 'string'
+    ? band.currencyCode.trim()
+    : '';
+
+  if (!band.interval || !/^[A-Za-z]{3}$/.test(currency)) return null;
+
+  return parseCompensation({
+    compensation: {
+      interval: band.interval,
+      minValue: band.minValue,
+      maxValue: band.maxValue,
+      currency: band.currencyCode,
+    },
+  });
+}
+
 const ALLOWED_ASHBY_HOSTS = new Set(['api.ashbyhq.com']);
 
 /** @param {string} url */
@@ -106,12 +215,19 @@ function resolveApiUrl(entry) {
   return `https://api.ashbyhq.com/posting-api/job-board/${match[1]}?includeCompensation=true`;
 }
 
+/**
+ * @param {number} ms
+ * @param {import('./_types.js').Context} ctx
+ */
 function sleep(ms, ctx) {
   if (typeof ctx?.sleep === 'function') return ctx.sleep(ms);
   return new Promise((r) => setTimeout(r, ms));
 }
 
 // NaN-safe Date.parse — `|| undefined` would also coerce a valid epoch 0.
+/**
+ * @param {string | null | undefined} value
+ */
 function toEpochMs(value) {
   if (!value) return undefined;
   const parsed = Date.parse(value);
@@ -171,14 +287,38 @@ export default {
       try {
         const json = /** @type {any} */ (await ctx.fetchJson(apiUrl, { timeoutMs: ASHBY_TIMEOUT_MS, redirect: 'error' }));
         const jobs = Array.isArray(json?.jobs) ? json.jobs : [];
-        return jobs.map(/** @param {any} j */ (j) => ({
-          title: j.title || '',
-          url: j.jobUrl || '',
-          company: entry.name,
-          location: formatLocation(j),
-          salary: parseCompensation(j),
-          postedAt: toEpochMs(j.publishedAt),
-        }));
+        return jobs.map(/** @param {any} j */ (j) => {
+          const compensationTiers = j?.compensation?.compensationTiers;
+          const salaryBands = parseSalaryBands(j);
+          const hasTierData = Array.isArray(compensationTiers) && compensationTiers.length > 0;
+          const hasSingleUnambiguousBand = compensationTiers?.length === 1 && salaryBands.length === 1;
+          const bandSalary = hasSingleUnambiguousBand
+            ? simpleSalaryFromBand(salaryBands[0])
+            : null;
+          const salary = hasTierData ? bandSalary : parseCompensation(j);
+
+          return {
+            title: j.title || '',
+            url: j.jobUrl || '',
+            company: entry.name,
+            location: formatLocation(j),
+            sourceJobId: typeof j.id === 'string' ? j.id.trim() : '',
+            description: typeof j.descriptionPlain === 'string' ? j.descriptionPlain : '',
+            employmentTypeRaw: typeof j.employmentType === 'string' ? j.employmentType : '',
+            workingTimeRaw: typeof j.employmentType === 'string' ? j.employmentType : '',
+            workplaceTypeRaw: typeof j.workplaceType === 'string'
+              ? j.workplaceType
+              : j.isRemote === true ? 'Remote' : '',
+            salary,
+            salaryBands,
+            salaryMin: bandSalary?.min ?? null,
+            salaryMax: bandSalary?.max ?? null,
+            salaryCurrency: bandSalary?.currency || '',
+            salaryPeriod: bandSalary ? 'yearly' : '',
+            postedAt: toEpochMs(j.publishedAt),
+            rawPayload: j,
+          };
+        });
       } catch (e) {
         lastErr = e;
       }

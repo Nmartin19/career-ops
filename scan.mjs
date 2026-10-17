@@ -1586,6 +1586,51 @@ function guardStatusFor(code) {
   return 'skipped_invalid_url';
 }
 
+/**
+ * Convert a normalized provider offer into the stable schemaVersion 1 JSON
+ * representation emitted by --json-out.
+ *
+ * @param {Record<string, any>} offer
+ * @returns {Record<string, any>}
+ */
+export function serializeOfferForJson(offer) {
+  return {
+    source: offer.source || null,
+    sourceJobId: offer.sourceJobId || null,
+
+    title: offer.title,
+    url: offer.url,
+    company: offer.company,
+    location: offer.location || '',
+    description: offer.description || '',
+    postedAt: offer.postedAt ?? null,
+    expiresAt: offer.expiresAt ?? null,
+
+    salary: offer.salary ?? null,
+    salaryBands: Array.isArray(offer.salaryBands) ? offer.salaryBands : [],
+    employmentTypeRaw: offer.employmentTypeRaw || '',
+    workingTimeRaw: offer.workingTimeRaw || '',
+    workplaceTypeRaw: offer.workplaceTypeRaw || '',
+    seniority: offer.seniority || '',
+    salaryMin: Number.isFinite(offer.salaryMin) ? offer.salaryMin : null,
+    salaryMax: Number.isFinite(offer.salaryMax) ? offer.salaryMax : null,
+    salaryCurrency: offer.salaryCurrency || '',
+    salaryPeriod: offer.salaryPeriod || '',
+    salaryRaw: offer.salaryRaw || '',
+    tags: Array.isArray(offer.tags) ? offer.tags : [],
+    category: offer.category || '',
+
+    trustScore: offer.trustScore ?? null,
+    trustFlags: Array.isArray(offer.trustFlags) ? offer.trustFlags : [],
+    trustLevel: offer.trustLevel || null,
+
+    blacklisted: Boolean(offer.blacklisted),
+    note: offer.note || null,
+
+    rawPayload: offer.rawPayload ?? null,
+  };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
@@ -1974,39 +2019,7 @@ if (!dryRun && jsonOutPath) {
     generatedAt: new Date().toISOString(),
     offersCount: verifiedOffers.length,
 
-    offers: verifiedOffers.map(offer => ({
-      source: offer.source || null,
-      sourceJobId: offer.sourceJobId || null,
-
-      title: offer.title,
-      url: offer.url,
-      company: offer.company,
-      location: offer.location || '',
-      description: offer.description || '',
-      postedAt: offer.postedAt ?? null,
-      expiresAt: offer.expiresAt ?? null,
-
-      salary: offer.salary ?? null,
-      employmentTypeRaw: offer.employmentTypeRaw || '',
-      workingTimeRaw: offer.workingTimeRaw || '',
-      seniority: offer.seniority || '',
-      salaryMin: Number.isFinite(offer.salaryMin) ? offer.salaryMin : null,
-      salaryMax: Number.isFinite(offer.salaryMax) ? offer.salaryMax : null,
-      salaryCurrency: offer.salaryCurrency || '',
-      salaryPeriod: offer.salaryPeriod || '',
-      salaryRaw: offer.salaryRaw || '',
-      tags: Array.isArray(offer.tags) ? offer.tags : [],
-      category: offer.category || '',
-
-      trustScore: offer.trustScore ?? null,
-      trustFlags: Array.isArray(offer.trustFlags) ? offer.trustFlags : [],
-      trustLevel: offer.trustLevel || null,
-
-      blacklisted: Boolean(offer.blacklisted),
-      note: offer.note || null,
-
-      rawPayload: offer.rawPayload ?? null,
-    })),
+    offers: verifiedOffers.map(serializeOfferForJson),
   };
 
   writeFileSync(

@@ -12,10 +12,83 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { fail, finish, pass } from './helpers.mjs';
+import { serializeOfferForJson } from '../scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 const NODE = process.execPath;
+
+{
+  const salaryBands = [
+    {
+      tierId: 'tier-1',
+      tierName: 'Zone 1',
+      minValue: 180000,
+      maxValue: 220000,
+      currencyCode: 'USD',
+      interval: 'YEAR',
+    },
+    {
+      tierId: 'tier-2',
+      tierName: 'Zone 2',
+      minValue: null,
+      maxValue: 200000,
+      currencyCode: 'USD',
+      interval: 'YEAR',
+    },
+  ];
+  const offer = serializeOfferForJson({
+    title: 'Applied AI Lead',
+    url: 'https://jobs.example.com/ai-lead',
+    company: 'Example',
+    salary: { min: 180000, max: 220000, currency: 'USD' },
+    salaryBands,
+    salaryMin: 180000,
+    salaryMax: 220000,
+    salaryCurrency: 'USD',
+    salaryPeriod: 'yearly',
+    salaryRaw: '$180k-$220k',
+    workplaceTypeRaw: 'Hybrid',
+  });
+
+  if (JSON.stringify(offer.salaryBands) === JSON.stringify(salaryBands)) {
+    pass('JSON serializer preserves multiple salary bands, including null amounts');
+  } else {
+    fail(`JSON serializer salaryBands = ${JSON.stringify(offer.salaryBands)}`);
+  }
+
+  if (
+    JSON.stringify(offer.salary) === JSON.stringify({ min: 180000, max: 220000, currency: 'USD' })
+    && offer.salaryMin === 180000
+    && offer.salaryMax === 220000
+    && offer.salaryCurrency === 'USD'
+    && offer.salaryPeriod === 'yearly'
+    && offer.salaryRaw === '$180k-$220k'
+    && offer.workplaceTypeRaw === 'Hybrid'
+  ) {
+    pass('serializer preserves workplace type and all previous salary fields');
+  } else {
+    fail('serializer changed workplace type or a previous salary field');
+  }
+}
+
+{
+  const offer = serializeOfferForJson({
+    title: 'Strategic Finance Manager',
+    url: 'https://jobs.example.com/finance-manager',
+    company: 'Example',
+  });
+
+  if (Array.isArray(offer.salaryBands) && offer.salaryBands.length === 0
+      && offer.workplaceTypeRaw === '') {
+    pass('JSON serializer emits backward-compatible empty values when fields are unavailable');
+  } else {
+    fail(`JSON serializer fallback values = ${JSON.stringify({
+      salaryBands: offer.salaryBands,
+      workplaceTypeRaw: offer.workplaceTypeRaw,
+    })}`);
+  }
+}
 
 console.log('\nscan.mjs — --json-out structured file');
 
@@ -148,25 +221,30 @@ tracked_companies:
         if (
           offer?.employmentTypeRaw === ''
           && offer?.workingTimeRaw === 'full_time'
+          && offer?.workplaceTypeRaw === ''
           && offer?.seniority === 'senior'
           && offer?.salaryMin === 50000
           && offer?.salaryMax === 70000
           && offer?.salaryCurrency === 'EUR'
           && offer?.salaryPeriod === 'yearly'
+          && Array.isArray(offer?.salaryBands)
+          && offer.salaryBands.length === 0
           && JSON.stringify(offer?.tags) === JSON.stringify(['SQL', 'Python', 'Power BI'])
           && offer?.expiresAt === 1765584000000
           && offer?.rawPayload?.fixtureJobType === 'full_time'
         ) {
-          pass('JSON output preserves employment, working-time, salary, seniority, tags, expiry, and raw metadata');
+          pass('JSON output preserves employment, working-time, workplace, salary, seniority, tags, expiry, and raw metadata');
         } else {
           fail(`JSON output metadata = ${JSON.stringify({
             employmentTypeRaw: offer?.employmentTypeRaw,
             workingTimeRaw: offer?.workingTimeRaw,
+            workplaceTypeRaw: offer?.workplaceTypeRaw,
             seniority: offer?.seniority,
             salaryMin: offer?.salaryMin,
             salaryMax: offer?.salaryMax,
             salaryCurrency: offer?.salaryCurrency,
             salaryPeriod: offer?.salaryPeriod,
+            salaryBands: offer?.salaryBands,
             tags: offer?.tags,
             expiresAt: offer?.expiresAt,
             rawPayload: offer?.rawPayload,

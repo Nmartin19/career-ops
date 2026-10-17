@@ -10,6 +10,19 @@
 // Files prefixed with _ are never loaded as providers by scan.mjs.
 
 /**
+ * Provider-supplied compensation band. Providers may expose multiple bands
+ * for the same job, for example when compensation varies by location or tier.
+ *
+ * @typedef {object} SalaryBand
+ * @property {string} [tierId] Identifier supplied by the provider.
+ * @property {string} [tierName] Human-readable tier label.
+ * @property {number|null} [minValue] Minimum amount, or null when unavailable.
+ * @property {number|null} [maxValue] Maximum amount, or null when unavailable.
+ * @property {string} [currencyCode] Currency code supplied by the provider.
+ * @property {string} [interval] Compensation interval supplied by the provider.
+ */
+
+/**
  * Normalized job posting — the unit of currency throughout the scanner.
  *
  * @typedef {object} Job
@@ -30,6 +43,10 @@
  *                               usable date. scan.mjs ignores it; consumers
  *                               like scan-ats-full.mjs use it for recency
  *                               filtering.
+ * @property {string} [workplaceTypeRaw] Workplace type exactly as supplied by
+ *                                       the provider, when available.
+ * @property {SalaryBand[]} [salaryBands] Provider-supplied compensation bands,
+ *                                         preserved in provider order.
  * @property {number} [trustScore] 0-100 trust score from _trust-validator.mjs.
  * @property {string[]} [trustFlags] Flags raised by trust validation (e.g.
  *                                   'invalid_url', 'suspicious_domain').
