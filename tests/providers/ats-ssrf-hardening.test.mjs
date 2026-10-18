@@ -21,7 +21,15 @@ try {
     { name: 'L', careers_url: 'https://jobs.lever.co/example' },
     { transport: 'http', fetchJson: async (u, opts) => { leverUrl = u; leverOpts = opts; return []; }, fetchText: async () => '' },
   );
-  if (leverUrl === 'https://api.lever.co/v0/postings/example' && leverOpts?.redirect === 'error') {
+  const parsedLeverUrl = new URL(leverUrl);
+  if (parsedLeverUrl.protocol === 'https:' &&
+      parsedLeverUrl.host === 'api.lever.co' &&
+      parsedLeverUrl.pathname === '/v0/postings/example' &&
+      parsedLeverUrl.searchParams.get('mode') === 'json' &&
+      parsedLeverUrl.searchParams.get('limit') === '100' &&
+      parsedLeverUrl.searchParams.get('skip') === '0' &&
+      leverOpts?.redirect === 'error' &&
+      leverOpts?.headers?.Accept === 'application/json') {
     pass('lever.fetch() hits api.lever.co and passes redirect:"error"');
   } else {
     fail(`lever.fetch() default instance: url=${leverUrl}, opts=${JSON.stringify(leverOpts)}`);
@@ -32,7 +40,15 @@ try {
     { name: 'L EU', careers_url: 'https://jobs.eu.lever.co/example-eu' },
     { transport: 'http', fetchJson: async (u, opts) => { leverEuUrl = u; leverEuOpts = opts; return []; }, fetchText: async () => '' },
   );
-  if (leverEuUrl === 'https://api.eu.lever.co/v0/postings/example-eu' && leverEuOpts?.redirect === 'error') {
+  const parsedLeverEuUrl = new URL(leverEuUrl);
+  if (parsedLeverEuUrl.protocol === 'https:' &&
+      parsedLeverEuUrl.host === 'api.eu.lever.co' &&
+      parsedLeverEuUrl.pathname === '/v0/postings/example-eu' &&
+      parsedLeverEuUrl.searchParams.get('mode') === 'json' &&
+      parsedLeverEuUrl.searchParams.get('limit') === '100' &&
+      parsedLeverEuUrl.searchParams.get('skip') === '0' &&
+      leverEuOpts?.redirect === 'error' &&
+      leverEuOpts?.headers?.Accept === 'application/json') {
     pass('lever.fetch() hits api.eu.lever.co and passes redirect:"error"');
   } else {
     fail(`lever.fetch() EU instance: url=${leverEuUrl}, opts=${JSON.stringify(leverEuOpts)}`);
